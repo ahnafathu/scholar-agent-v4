@@ -6,9 +6,14 @@ import re
 from ddgs import DDGS
 from bs4 import BeautifulSoup
 
+import streamlit as st
+st.write("Cek koneksi: Halo Naf, kalau tulisan ini muncul berarti Dashboard aman!")
+
 # --- CONFIG & STYLES ---
 st.set_page_config(page_title="Scholar AI v4.0", page_icon="🎓", layout="wide")
-API_KEY = "AIzaSyCQ7u9aRscVl44sLJnokW-sc7ti71EYxdA"
+# Mengambil API Key dari Secrets Streamlit (Lebih Aman)
+import os
+API_KEY = st.secrets.get("API_KEY", "KODE_TIDAK_DITEMUKAN")
 URL_API = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key={API_KEY}"
 
 def get_content(url):
