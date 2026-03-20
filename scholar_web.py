@@ -3,7 +3,7 @@ import requests
 import json
 import time
 import re
-from ddgs import DDGS
+from duckduckgo_search import DDGS
 from bs4 import BeautifulSoup
 
 import streamlit as st
