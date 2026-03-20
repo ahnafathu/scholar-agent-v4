@@ -1,125 +1,117 @@
 import streamlit as st
+import google.generativeai as genai
 import requests
-import json
-import time
 import re
 from duckduckgo_search import DDGS
 from bs4 import BeautifulSoup
-import os
 
-# --- 1. CONFIG & STYLES (MUST BE FIRST) ---
-st.set_page_config(page_title="Scholar AI v4.0", page_icon="🎓", layout="wide")
+# --- 1. CONFIG & UI STYLE ---
+st.set_page_config(page_title="Scholar AI v4.0 (FIXED)", layout="wide", page_icon="🎓")
 
-# --- 2. API SETUP ---
-# Mengambil API Key dari Secrets Streamlit untuk keamanan
-API_KEY = st.secrets.get("API_KEY", "KODE_TIDAK_DITEMUKAN")
-URL_API = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key={API_KEY}"
+st.markdown("""
+<style>
+    .main { background-color: #0e1117; }
+    .stButton>button { width: 100%; background: #4CAF50; color: white; border-radius: 5px; }
+    .res-box { background: #262730; padding: 20px; border-radius: 10px; border: 1px solid #464b5d; }
+</style>
+""", unsafe_allow_html=True)
 
-def get_content(url):
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+# --- 2. JANTUNG API (ANTI-404) ---
+if "API_KEY" not in st.secrets:
+    st.error("Woi Naf, API_KEY belum ada di secrets.toml!")
+    st.stop()
+
+genai.configure(api_key=st.secrets["API_KEY"])
+
+@st.cache_resource
+def get_safe_model():
+    """Mencegah error 404 dengan scan model yang tersedia secara dinamis"""
     try:
-        res = requests.get(url, headers=headers, timeout=10)
-        if res.status_code != 200: return ""
-        soup = BeautifulSoup(res.text, 'html.parser')
-        # Membersihkan elemen sampah agar token AI hemat
-        for s in soup(['script', 'style', 'nav', 'footer', 'header']): s.decompose()
-        return soup.get_text(" ", strip=True)[:4000]
-    except:
-        return ""
+        available = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        # Urutan prioritas model
+        for target in ['models/gemini-1.5-flash', 'models/gemini-1.5-pro', 'models/gemini-pro']:
+            if target in available:
+                return genai.GenerativeModel(target)
+        return genai.GenerativeModel(available[0])
+    except Exception as e:
+        st.error(f"API Error: {e}")
+        return None
 
-# --- 3. SIDEBAR: USER PROFILE ---
-st.sidebar.header("👤 Your Profile")
-user_ielts = st.sidebar.number_input("Current IELTS Score", 0.0, 9.0, 6.0, 0.5)
-user_gpa = st.sidebar.text_input("Your GPA (e.g. 3.8/4.0)", "8.5/10")
-st.sidebar.info("This profile helps the AI provide a personalized 'Chance Analysis'.")
+model = get_safe_model()
+
+# --- 3. SCRAPER ENGINE ---
+def fetch_web_data(query):
+    data = []
+    try:
+        with DDGS() as ddgs:
+            results = list(ddgs.text(query, max_results=3))
+            for r in results:
+                try:
+                    h = {'User-Agent': 'Mozilla/5.0'}
+                    res = requests.get(r['href'], headers=h, timeout=7)
+                    soup = BeautifulSoup(res.text, 'html.parser')
+                    for s in soup(['script', 'style', 'nav', 'footer']): s.decompose()
+                    txt = soup.get_text(" ", strip=True)[:2500]
+                    if len(txt) > 200: data.append(txt)
+                except: continue
+    except: pass
+    return "\n\n".join(data)
 
 # --- 4. MAIN UI ---
-st.title("🎓 AI Smart Web Scraper & Scholar Analyst")
-st.write("System Status: Online & Ready to Hunt!")
-st.markdown("---")
+col1, col2 = st.columns([1, 2.5])
 
-user_input = st.text_input("🔍 Search Query", placeholder="Tulis apa saja, misal: beasiswa full funded S1 di Taiwan")
+with col1:
+    st.title("🎓 Scholar AI")
+    st.markdown("---")
+    with st.expander("👤 Your Profile", expanded=True):
+        ielts = st.number_input("IELTS", 0.0, 9.0, 6.0, 0.5)
+        gpa = st.text_input("GPA/Nilai", "8.5/10")
+    
+    st.markdown("---")
+    query = st.text_input("🔍 Cari Beasiswa:", placeholder="Contoh: Beasiswa S1 Taiwan")
+    btn = st.button("HUNT NOW! 🚀")
 
-if st.button("HUNT NOW! 🚀"):
-    if not user_input:
-        st.warning("Please enter your request first, Naf!")
-    else:
-        with st.status("🧠 AI is thinking & searching...", expanded=True) as status:
-            # STEP A: SMART QUERY EXPANSION
-            # AI bakal bikin keyword tambahan secara otomatis biar pencarian lebih luas
-            search_queries = [user_input]
-            try:
-                refine_payload = {
-                    "contents": [{"parts": [{"text": f"Ganti input ini: '{user_input}' menjadi 2 keyword pencarian beasiswa dalam bahasa Inggris yang paling efektif. Pisahkan dengan koma saja tanpa penjelasan lain."}]}]
-                }
-                refine_res = requests.post(URL_API, json=refine_payload)
-                if refine_res.status_code == 200:
-                    suggestions = refine_res.json()['candidates'][0]['content']['parts'][0]['text']
-                    search_queries.extend([s.strip() for s in suggestions.split(",")])
-            except: 
-                pass
-
-            # STEP B: MULTI-KEYWORD SEARCHING
-            raw_contents = []
-            with DDGS() as ddgs:
-                # Coba maksimal 2 query terbaik untuk efisiensi
-                for q in search_queries[:2]:
-                    status.write(f"Searching for: {q}...")
-                    try:
-                        results = list(ddgs.text(q, max_results=3))
-                        for r in results:
-                            link = r['href']
-                            status.write(f"Reading: {link}")
-                            content = get_content(link)
-                            if content:
-                                raw_contents.append(f"SOURCE: {link}\nDATA: {content}")
-                            time.sleep(1) # Delay anti-block
-                    except:
-                        continue
-            
-            # STEP C: FINAL ANALYSIS
-            if not raw_contents:
-                status.update(label="No data found.", state="error")
-                st.error("I couldn't find enough information. Please try a more general topic.")
-            else:
-                status.update(label="Analyzing data & generating report...", state="running")
+with col2:
+    if btn:
+        if not query:
+            st.warning("Isi dulu kolom pencariannya!")
+        else:
+            with st.status("🧠 Processing Analysis...", expanded=True) as status:
+                # Step 1: Search
+                status.write("Hunting data from web...")
+                context = fetch_web_data(query)
                 
-                # Prompt instruksi agar AI fleksibel secara bahasa dan jujur
-                prompt_text = f"""
-                You are a world-class Scholarship Consultant.
-                DATA FOUND: {" ".join(raw_contents)}
-                USER REQUEST: {user_input}
-                USER PROFILE: IELTS {user_ielts}, GPA {user_gpa}
+                # Step 2: AI Analysis
+                status.write("AI is analyzing your chance...")
+                prompt = f"""
+                Analisis beasiswa untuk user dengan profil: IELTS {ielts}, GPA {gpa}.
+                Query: {query}
+                Data Web: {context if context else "Gunakan data internalmu."}
                 
-                STRICT RULES:
-                1. LANGUAGE: Respond using the SAME LANGUAGE used in the 'USER REQUEST'.
-                2. STRUCTURE: 
-                   - Scholarship Table (Name, Provider, Deadline, Link).
-                   - Eligibility Match: Comparison between user profile and requirements.
-                   - Brutally Honest Advice: Direct feedback on the user's chances.
-                   - Strategic Next Steps: 3 clear actions to take.
-                3. HONESTY: Do not sugarcoat. If the user's score is too low, say it clearly.
+                TUGAS:
+                1. Buat tabel beasiswa yang relevan (Nama, Syarat, Link/Deadline).
+                2. Berikan analisis peluang yang jujur dan berdarah-darah.
+                3. Berikan 'Confidence Score: [angka]%' di baris paling akhir.
                 """
                 
-                payload = {"contents": [{"parts": [{"text": prompt_text}]}]}
-                res = requests.post(URL_API, json=payload)
-                
-                if res.status_code == 200:
-                    status.update(label="Analysis complete!", state="complete", expanded=False)
-                    laporan = res.json()['candidates'][0]['content']['parts'][0]['text']
+                try:
+                    response = model.generate_content(prompt)
+                    output = response.text
                     
-                    st.subheader("📊 Strategic Analysis Report")
-                    st.markdown(laporan)
+                    # Tampilkan hasil di box yang rapi
+                    st.markdown('<div class="res-box">', unsafe_allow_html=True)
+                    st.markdown(output)
+                    st.markdown('</div>', unsafe_allow_html=True)
                     
-                    st.download_button(
-                        label="📥 Download Report (.md)",
-                        data=laporan,
-                        file_name=f"Scholar_Report_{int(time.time())}.md",
-                        mime="text/markdown"
-                    )
-                else:
-                    status.update(label="AI Analysis failed.", state="error")
-                    st.error("The AI encountered an error. Check your API Key in Streamlit Secrets.")
-
-st.markdown("---")
-st.caption("Engineered by Ahnaf | Scholar AI v4.0 | No Fluff, Just Truth.")
+                    # Step 3: Visualizer (Regex safe)
+                    scores = re.findall(r'(\d+)%', output)
+                    if scores:
+                        val = int(scores[-1])
+                        st.write(f"**Reliabilitas Analisis:** {val}%")
+                        st.progress(val / 100.0)
+                    
+                    status.update(label="Analysis Finished!", state="complete")
+                except Exception as e:
+                    st.error(f"AI Gagal: {e}")
+    else:
+        st.info("Input profil lo di sebelah kiri, terus klik Hunt Now!")

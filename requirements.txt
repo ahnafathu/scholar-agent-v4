@@ -1,5 +1,4 @@
-duckduckgo-search
 streamlit
-google-generativeai
-beautifulsoup4
 requests
+ddgs
+beautifulsoup4
