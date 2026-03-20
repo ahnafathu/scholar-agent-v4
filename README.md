@@ -51,7 +51,7 @@ streamlit run scholar_web.py
 🌐 Info 3: Demo & Akses Publik
 Anda bisa langsung mencoba aplikasi ini tanpa instalasi melalui tautan berikut:
 
-👉 Live Demo: Scholar AI Agent v4.0
+👉 Live Demo: [Scholar AI Agent v4.0](https://scholar-agent-v4-2n2tmotwqpzqbcd3isyhtm.streamlit.app/)
 
 🧰 Tech Stack
 Bahasa Pemrograman: Python 3.10+
