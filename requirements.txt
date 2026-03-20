@@ -1,4 +1,4 @@
-duckduckgo_search
+duckduckgo-search
 streamlit
 google-generativeai
 beautifulsoup4
