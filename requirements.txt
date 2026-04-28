@@ -1,5 +1,5 @@
 streamlit
 requests
-ddgs
+duckduckgo-search
 beautifulsoup4
 google-generativeai>=0.8.0
