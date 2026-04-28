@@ -2,3 +2,4 @@ streamlit
 requests
 ddgs
 beautifulsoup4
+google-generativeai>=0.8.0
